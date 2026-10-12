@@ -200,9 +200,16 @@ async function loadList() {
       </div>`).join("") : `<div class="empty">Пока пусто 🐾</div>`;
     box.querySelectorAll(".item").forEach((row) => {
       const id = +row.dataset.id;
-      row.querySelector("input").addEventListener("change", async () => { await rpc("toggle_item", { p_id: id }); loadList(); });
+      row.querySelector("input").addEventListener("change", async () => {
+        row.classList.toggle("done");
+        try { await rpc("toggle_item", { p_id: id }); } catch { alert("Не получилось 😿"); }
+        loadList();
+      });
       row.querySelector(".x").addEventListener("click", async () => {
-        if (confirm("Удалить пункт?")) { await rpc("delete_item", { p_id: id }); loadList(); }
+        if (!confirm("Удалить пункт?")) return;
+        row.remove();
+        try { await rpc("delete_item", { p_id: id }); } catch { alert("Не получилось удалить 😿"); }
+        loadList();
       });
     });
   } catch { box.innerHTML = `<div class="empty">Не удалось загрузить 😿</div>`; }
