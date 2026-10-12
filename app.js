@@ -141,7 +141,7 @@ async function loadList() {
   } catch { box.innerHTML = `<div class="empty">Не удалось загрузить 😿</div>`; }
 }
 
-let pl = null, applying = false, lastUrl = null;
+let pl = null, applying = false, lastUrl = null, host = null, fresh = false, chatTimer = null, saveTimer = null, lastMsg = 0;
 
 function ytId(u) {
   const m = String(u).match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{11})/);
@@ -159,31 +159,88 @@ function parseEmbed(u) {
   return null;
 }
 function stopWatch() {
-  clearInterval(watchTimer); watchTimer = null;
+  saveState(); // оставляем видео на паузе, чтобы место запомнилось
+  clearInterval(watchTimer); clearInterval(chatTimer); clearInterval(saveTimer);
+  watchTimer = chatTimer = saveTimer = null;
   try { pl && pl.destroy(); } catch {}
-  pl = null; lastUrl = null;
+  pl = null; lastUrl = null; host = null; lastMsg = 0;
 }
+// ведущий при выходе ставит паузу и сохраняет позицию (keepalive — чтобы запрос ушёл при закрытии вкладки)
+function saveState() {
+  if (!pl || !pl.ready() || host !== who || !lastUrl) return;
+  fetch(`${CFG.SUPABASE_URL}/rest/v1/rpc/set_watch`, {
+    method: "POST", keepalive: true,
+    headers: { "Content-Type": "application/json", apikey: CFG.ANON_KEY },
+    body: JSON.stringify({ p_code: code, p_url: lastUrl, p_playing: false, p_pos: pl.time(), p_by: who }),
+  }).catch(() => {});
+}
+addEventListener("pagehide", saveState);
+const EMOJI = "😀 😂 🥰 😍 😘 😎 🤔 😮 😭 😡 🥺 😴 🤗 🙈 👍 👎 👏 🙏 💪 🔥 ✨ ❤️ 💔 💋 🎉 🍿 🍕 🍰 ☕ 🐱 🐾 😺 😸 😻 🙀".split(" ");
+
 function renderWatch() {
   $("#content").innerHTML = `
     <div class="add">
       <input id="w-url" placeholder="Ссылка: YouTube, Rutube, VK Видео или файл .mp4/.webm">
       <div class="row"><button class="btn" id="w-invite">Позвать смотреть</button><button class="btn ghost" id="w-sync">Все ко мне</button></div>
+      <div class="status" id="w-status"></div>
     </div>
-    <div class="player" id="w-player"></div>`;
+    <div class="player" id="w-player"></div>
+    <div class="chat">
+      <div class="msgs" id="msgs"></div>
+      <div class="emojis" id="emojis" hidden>${EMOJI.map((e) => `<button type="button">${e}</button>`).join("")}</div>
+      <form class="send" id="chat-form">
+        <button type="button" class="btn ghost" id="emoji-btn">🙂</button>
+        <input id="chat-input" placeholder="Сообщение" autocomplete="off" maxlength="500">
+        <button class="btn">→</button>
+      </form>
+    </div>`;
   $("#w-invite").addEventListener("click", async () => {
     const url = $("#w-url").value.trim();
     if (!safeUrl(url)) return alert("Нужна ссылка, начинающаяся с http(s)://");
-    await rpc("set_watch", { p_url: url, p_playing: false, p_pos: 0, p_by: who });
+    await rpc("set_watch", { p_url: url, p_playing: false, p_pos: 0, p_by: who, p_take: true });
     notify(`${who} зовёт смотреть вместе! Заходи на сайт → «Совместный просмотр».`);
     poll();
   });
-  $("#w-sync").addEventListener("click", () => push());
-  poll();
+  $("#w-sync").addEventListener("click", () => push(true));
+  $("#emoji-btn").addEventListener("click", () => { const e = $("#emojis"); e.hidden = !e.hidden; });
+  $("#emojis").addEventListener("click", (e) => {
+    if (e.target.tagName !== "BUTTON") return;
+    const i = $("#chat-input"); i.value += e.target.textContent; i.focus();
+  });
+  $("#chat-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const i = $("#chat-input"), body = i.value.trim();
+    if (!body) return;
+    i.value = "";
+    try { await rpc("send_msg", { p_author: who, p_body: body }); loadMsgs(); } catch {}
+  });
+  poll(); loadMsgs();
   watchTimer = setInterval(poll, 2000);
+  chatTimer = setInterval(loadMsgs, 2000);
+  saveTimer = setInterval(() => { if (host === who && pl && pl.ready() && pl.playing()) push(); }, 5000);
 }
-async function push() {
+async function loadMsgs() {
+  const box = $("#msgs");
+  if (!box) return;
+  let list;
+  try { list = await rpc("list_msgs", { p_after: lastMsg }); } catch { return; }
+  if (!list.length) return;
+  box.insertAdjacentHTML("beforeend", list.map((m) => `
+    <div class="msg ${m.author === who ? "mine" : ""}">
+      <div class="bubble">${esc(m.body)}</div>
+      <div class="meta">${esc(m.author)} · ${new Date(m.created_at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</div>
+    </div>`).join(""));
+  lastMsg = list[list.length - 1].id;
+  box.scrollTop = box.scrollHeight;
+}
+// Двигать общее состояние может только ведущий; take=true — забрать пульт себе.
+async function push(take = false) {
   if (applying || !pl || !pl.ready()) return;
-  try { await rpc("set_watch", { p_url: lastUrl, p_playing: pl.playing(), p_pos: pl.time(), p_by: who }); } catch {}
+  if (!take && host && host !== who) return;
+  try {
+    await rpc("set_watch", { p_url: lastUrl, p_playing: pl.playing(), p_pos: pl.time(), p_by: who, p_take: take });
+    if (take) host = who;
+  } catch {}
 }
 
 // ---- адаптеры плееров: ready/time/playing/seek/play/pause/destroy ----
@@ -278,6 +335,7 @@ function mount(url) {
   if (!box) return;
   try { pl && pl.destroy(); } catch {}
   lastUrl = url;
+  fresh = true; // первый раз применяем сохранённое место, даже если ты ведущий
   const id = ytId(url), emb = parseEmbed(url);
   pl = id ? ytPlayer(box, id)
     : emb && emb.kind === "rutube" ? rutubePlayer(box, emb.src)
@@ -289,8 +347,13 @@ async function poll() {
   let w;
   try { w = await rpc("get_watch"); } catch { return; }
   if (!w || !w.url) return;
+  host = w.by;
+  const st = $("#w-status");
+  if (st) st.textContent = host ? `Пульт у: ${host}` : "";
   if (w.url !== lastUrl) mount(w.url);
   if (!pl || !pl.ready()) return;
+  if (host === who && !fresh) return; // ведущий сам управляет, подстраиваются остальные
+  fresh = false;
   let target = w.pos;
   if (w.playing) target += w.elapsed;
   applying = true;

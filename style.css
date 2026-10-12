@@ -54,3 +54,16 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
   .add .row{flex-direction:column}
   .card{padding:22px}
 }
+
+.chat{background:var(--card);border-radius:16px;padding:12px;box-shadow:0 2px 12px var(--shadow)}
+.msgs{height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px}
+.msg{max-width:80%;align-self:flex-start}
+.msg.mine{align-self:flex-end;text-align:right}
+.bubble{display:inline-block;background:var(--accent-2);padding:8px 12px;border-radius:14px;word-break:break-word;text-align:left;white-space:pre-wrap}
+.msg.mine .bubble{background:var(--accent);color:var(--on-accent)}
+.msg .meta{font-size:11px;color:var(--muted);margin-top:2px}
+.emojis{display:flex;flex-wrap:wrap;gap:2px;padding:8px 0}
+.emojis button{border:0;background:none;font-size:22px;cursor:pointer;border-radius:8px;padding:2px 4px}
+.emojis button:hover{background:var(--accent-2)}
+.send{display:flex;gap:8px;margin-top:8px}
+.send input{flex:1;min-width:0}
