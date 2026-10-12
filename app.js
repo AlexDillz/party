@@ -103,7 +103,7 @@ async function renderList() {
       <input name="link" placeholder="Ссылка (необязательно)" maxlength="500">
       <input type="file" name="files" id="files" accept="image/*,video/*" multiple hidden>
       <div class="previews" id="previews"></div>
-      <div class="row"><button type="button" class="btn ghost" id="attach">📎 Фото / видео</button><button class="btn" id="add-btn">Добавить</button></div>
+      <div class="row"><button type="button" class="btn ghost" id="attach">📎 Фото / видео</button><label class="orig"><input type="checkbox" id="orig"> Оригинал</label><button class="btn" id="add-btn">Добавить</button></div>
       <div class="status" id="up-status"></div>
     </form>
     <div id="list"><div class="empty">Загружаю…</div></div>`;
@@ -128,7 +128,7 @@ async function renderList() {
       const media = [];
       for (let i = 0; i < picked.length; i++) {
         st.textContent = `Загружаю ${i + 1} из ${picked.length}…`;
-        media.push(await uploadMedia(picked[i]));
+        media.push(await uploadMedia(picked[i], $("#orig").checked));
       }
       st.textContent = "";
       await rpc("add_item", { p_section: section, p_title: title, p_note: f.get("note").trim(), p_link: f.get("link").trim(), p_author: who, p_media: media });
@@ -143,17 +143,34 @@ async function renderList() {
 }
 const MEDIA_URL = (p) => `${CFG.SUPABASE_URL}/storage/v1/object/public/media/${p}`;
 const MAX_MB = 50;
-async function uploadMedia(file) {
-  if (file.size > MAX_MB * 1048576) throw new Error(`Файл «${file.name}» больше ${MAX_MB} МБ`);
+// Фото: длинная сторона до 2000 px, JPEG 85%. Если не вышло или стало не меньше — грузим как есть.
+async function shrinkImage(file) {
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(file.type)) return file;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    const g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.85));
+    return blob && blob.size < file.size ? blob : file;
+  } catch { return file; }
+}
+async function uploadMedia(file, original = false) {
+  if (!original) file = await shrinkImage(file);
+  if (file.size > MAX_MB * 1048576) throw new Error(`Файл «${file.name || "без имени"}» больше ${MAX_MB} МБ`);
   const isVideo = file.type.startsWith("video/");
-  const ext = ((file.name.match(/\.([a-z0-9]{2,5})$/i) || [])[1] || (isVideo ? "mp4" : "jpg")).toLowerCase();
+  const ext = file.type === "image/jpeg" && !file.name ? "jpg"
+    : ((file.name.match(/\.([a-z0-9]{2,5})$/i) || [])[1] || (isVideo ? "mp4" : "jpg")).toLowerCase();
   const path = `${crypto.randomUUID()}.${ext}`;
   const r = await fetch(`${CFG.SUPABASE_URL}/storage/v1/object/media/${path}`, {
     method: "POST",
     headers: { apikey: CFG.ANON_KEY, "Content-Type": file.type || (isVideo ? "video/mp4" : "image/jpeg"), "x-upsert": "false" },
     body: file,
   });
-  if (!r.ok) throw new Error(`Файл «${file.name}» не загрузился`);
+  if (!r.ok) throw new Error(`Файл «${file.name || "без имени"}» не загрузился`);
   return { p: path, t: isVideo ? "video" : "image" };
 }
 function mediaHtml(list) {
