@@ -33,7 +33,8 @@ async function rpc(fn, args = {}) {
     }
     throw new Error(msg);
   }
-  return r.json();
+  const t = await r.text();
+  return t ? JSON.parse(t) : null;
 }
 function notify(text) {
   fetch(`${CFG.SUPABASE_URL}/functions/v1/bot`, {
