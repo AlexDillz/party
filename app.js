@@ -1,10 +1,10 @@
 "use strict";
 const SECTIONS = [
-  { id: "eat", title: "Где поесть", icon: "🍜" },
-  { id: "walk", title: "Где погулять", icon: "🌳" },
-  { id: "wish", title: "Вишлист", icon: "🎁" },
-  { id: "want", title: "Просто хотелки", icon: "✨" },
-  { id: "watch", title: "Совместный просмотр", icon: "🎬" },
+  { id: "eat", title: "Поесть", icon: "🐾" },
+  { id: "walk", title: "Погулять", icon: "🐾" },
+  { id: "wish", title: "Вишлист", icon: "🐾" },
+  { id: "want", title: "Просто хотелки", icon: "🐾" },
+  { id: "watch", title: "Совместный просмотр", icon: "🐾" },
 ];
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -26,7 +26,13 @@ async function rpc(fn, args = {}) {
     headers: { "Content-Type": "application/json", apikey: CFG.ANON_KEY },
     body: JSON.stringify({ p_code: code, ...args }),
   });
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    const msg = await r.text();
+    if (msg.includes("denied")) { // номерок больше не действует (например, выдан новый)
+      code = who = null; store.set("code", null); store.set("who", null); route();
+    }
+    throw new Error(msg);
+  }
   return r.json();
 }
 function notify(text) {
