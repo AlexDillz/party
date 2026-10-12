@@ -19,7 +19,6 @@ let who = store.get("who");
 let section = store.get("section") || "eat";
 let watchTimer = null;
 
-// ---------- API ----------
 async function rpc(fn, args = {}) {
   const r = await fetch(`${CFG.SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: "POST",
@@ -28,7 +27,7 @@ async function rpc(fn, args = {}) {
   });
   if (!r.ok) {
     const msg = await r.text();
-    if (msg.includes("denied")) { // номерок больше не действует (например, выдан новый)
+    if (msg.includes("denied")) { 
       code = who = null; store.set("code", null); store.set("who", null); route();
     }
     throw new Error(msg);
@@ -43,7 +42,6 @@ function notify(text) {
   }).catch(() => {});
 }
 
-// ---------- screens ----------
 function show(id) {
   for (const s of ["screen-code", "screen-app"]) $("#" + s).hidden = s !== id;
   document.body.dataset.theme = id === "screen-app" ? (who === "Вика" ? "vika" : "vitya") : "none";
@@ -79,7 +77,6 @@ $("#profile").addEventListener("click", () => {
   if (confirm("Выйти из профиля?")) { code = who = null; store.set("code", null); store.set("who", null); route(); }
 });
 
-// ---------- tabs ----------
 function renderTabs() {
   $("#tabs").innerHTML = SECTIONS.map((s) =>
     `<button data-id="${s.id}" class="${s.id === section ? "on" : ""}">${s.icon} ${s.title}</button>`).join("");
@@ -94,7 +91,6 @@ function renderSection() {
   section === "watch" ? renderWatch() : renderList();
 }
 
-// ---------- lists ----------
 async function renderList() {
   const sec = SECTIONS.find((s) => s.id === section);
   const el = $("#content");
@@ -144,7 +140,6 @@ async function loadList() {
   } catch { box.innerHTML = `<div class="empty">Не удалось загрузить 😿</div>`; }
 }
 
-// ---------- совместный просмотр ----------
 let yt = null, vid = null, applying = false, lastUrl = null;
 
 function ytId(u) {
@@ -160,8 +155,7 @@ function renderWatch() {
   $("#content").innerHTML = `
     <div class="add">
       <input id="w-url" placeholder="Ссылка на YouTube или прямая ссылка на видео (.mp4/.webm)">
-      <div class="row"><button class="btn" id="w-invite">🎬 Позвать смотреть</button><button class="btn ghost" id="w-sync">Все ко мне</button></div>
-      <div class="status" id="w-status"></div>
+      <div class="row"><button class="btn" id="w-invite">Позвать смотреть</button><button class="btn ghost" id="w-sync">Все ко мне</button></div>
     </div>
     <div class="player" id="w-player"></div>`;
   $("#w-invite").addEventListener("click", async () => {
@@ -213,7 +207,6 @@ async function poll() {
   if (!w || !w.url) return;
   if (w.url !== lastUrl) {
     mount(w.url);
-    $("#w-status").textContent = `Смотрим вместе (${w.by})`;
   }
   const ready = (yt && yt.getPlayerState) || vid;
   if (!ready) return;

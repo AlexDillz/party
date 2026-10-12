@@ -1,4 +1,3 @@
-// Telegram-бот + рассылка уведомлений. Деплой: supabase functions deploy bot --no-verify-jwt
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -14,7 +13,6 @@ const cors = {
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// text — уже готовый HTML (<code> делает номерок копируемым по нажатию)
 async function tg(chat_id: number, text: string) {
   await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: "POST",
@@ -34,7 +32,6 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   const body = await req.json().catch(() => ({}));
 
-  // --- уведомление с сайта ---
   if (body.code) {
     const { data: me } = await sb.from("users").select("name").eq("code", String(body.code)).maybeSingle();
     if (!me) return new Response("denied", { status: 403, headers: cors });
@@ -43,13 +40,12 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: cors });
   }
 
-  // --- вебхук Telegram ---
   if (req.headers.get("x-telegram-bot-api-secret-token") !== SECRET) return new Response("no", { status: 401 });
   const m = body.message;
   if (!m?.text) return new Response("ok");
   const { data: u } = await sb.from("users").select("*").eq("tg_id", m.from.id).maybeSingle();
   if (!u) {
-    await tg(m.chat.id, "Мяу? Тебя нет в списке 🙀");
+    await tg(m.chat.id, "Мяу? Тебя нет в списке");
     return new Response("ok");
   }
   const cmd = m.text.split(" ")[0].split("@")[0];

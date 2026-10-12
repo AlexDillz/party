@@ -21,7 +21,7 @@ create table watch (
   url        text,
   playing    boolean not null default false,
   pos        double precision not null default 0,
-  by         text,
+  "by"       text,
   updated_at timestamptz not null default now()
 );
 insert into watch(id) values (1);
@@ -75,7 +75,7 @@ declare w watch;
 begin
   if not _ok(p_code) then raise exception 'denied'; end if;
   select * into w from watch where id = 1;
-  return json_build_object('url', w.url, 'playing', w.playing, 'pos', w.pos, 'by', w.by,
+  return json_build_object('url', w.url, 'playing', w.playing, 'pos', w.pos, 'by', to_jsonb(w)->>'by',
                            'elapsed', extract(epoch from now() - w.updated_at));
 end $$;
 
@@ -84,8 +84,6 @@ returns void language plpgsql security definer set search_path = public as $$
 begin
   if not _ok(p_code) then raise exception 'denied'; end if;
   if p_url !~* '^https?://' then raise exception 'bad url'; end if;
-  update watch set url = left(p_url,500), playing = p_playing, pos = p_pos, by = p_by, updated_at = now() where id = 1;
+  update watch set url = left(p_url,500), playing = p_playing, pos = p_pos, "by" = p_by, updated_at = now() where id = 1;
 end $$;
 
--- После создания бота: впиши tg id (число) себя и Вики. Узнать можно у @userinfobot.
--- insert into users(name, tg_id) values ('Вика', 111111111), ('Витя', 222222222);

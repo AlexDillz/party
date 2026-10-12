@@ -1,7 +1,5 @@
 :root{--bg:#f4f1ee;--card:#fff;--text:#2a2a33;--muted:#8a8a96;--accent:#7c6cf0;--on-accent:#fff;--accent-2:#efeaff;--line:#e8e4e0;--shadow:#0001}
-/* Вика: розовый + белый/бежевый */
 body[data-theme=vika]{--bg:#fbf3ec;--card:#fffdfa;--text:#3b2a2f;--muted:#a08c8f;--accent:#e8607f;--accent-2:#fde3e9;--line:#f2dcd9}
-/* Витя: чёрный + оранжевый */
 body[data-theme=vitya]{--bg:#121214;--card:#1c1c20;--text:#f1ece6;--muted:#8d8a86;--accent:#ff8a1f;--on-accent:#18181b;--accent-2:#2c2118;--line:#2d2d33;--shadow:#0006}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;transition:background .3s}
