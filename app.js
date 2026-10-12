@@ -136,7 +136,7 @@ async function renderList() {
       e.target.reset();
       picked = []; drawPicked();
       loadList();
-    } catch (err) { st.textContent = ""; alert(String(err.message || err).startsWith("Файл") ? err.message : "Не получилось добавить 😿"); }
+    } catch (err) { st.textContent = ""; console.error(err); alert(String(err.message || err).startsWith("Файл") ? err.message : "Не получилось добавить 😿\n" + String(err.message || err).slice(0, 300)); }
     btn.disabled = false;
   });
   loadList();
