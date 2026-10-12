@@ -67,3 +67,12 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
 .emojis button:hover{background:var(--accent-2)}
 .send{display:flex;gap:8px;margin-top:8px}
 .send input{flex:1;min-width:0}
+
+.media{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;margin:8px 0}
+.media img,.media video{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;background:#000;display:block}
+.media video{object-fit:contain}
+.previews{display:flex;flex-wrap:wrap;gap:6px}
+.previews:empty{display:none}
+.chip{background:var(--accent-2);color:var(--accent);border-radius:999px;padding:4px 10px;font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip button{border:0;background:none;color:inherit;cursor:pointer;padding:0 0 0 4px}
+.btn:disabled{opacity:.6;cursor:wait}

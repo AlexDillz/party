@@ -4,6 +4,7 @@ const SECTIONS = [
   { id: "walk", title: "Погулять", icon: "🐾" },
   { id: "wish", title: "Вишлист", icon: "🐾" },
   { id: "want", title: "Просто хотелки", icon: "🐾" },
+  { id: "together", title: "Совместное времяпровождение", icon: "🐾" },
   { id: "watch", title: "Совместный просмотр", icon: "🐾" },
 ];
 const $ = (s) => document.querySelector(s);
@@ -99,21 +100,68 @@ async function renderList() {
     <form class="add" id="add-form">
       <input name="title" placeholder="${sec.icon} Что добавим?" required maxlength="200">
       <textarea name="note" rows="2" placeholder="Заметка (необязательно)" maxlength="1000"></textarea>
-      <div class="row"><input name="link" placeholder="Ссылка (необязательно)" maxlength="500"><button class="btn">Добавить</button></div>
+      <input name="link" placeholder="Ссылка (необязательно)" maxlength="500">
+      <input type="file" name="files" id="files" accept="image/*,video/*" multiple hidden>
+      <div class="previews" id="previews"></div>
+      <div class="row"><button type="button" class="btn ghost" id="attach">📎 Фото / видео</button><button class="btn" id="add-btn">Добавить</button></div>
+      <div class="status" id="up-status"></div>
     </form>
     <div id="list"><div class="empty">Загружаю…</div></div>`;
+  let picked = [];
+  const drawPicked = () => {
+    $("#previews").innerHTML = picked.map((f, i) => `<span class="chip">${f.type.startsWith("video") ? "🎬" : "🖼️"} ${esc(f.name)} <button type="button" data-i="${i}">✕</button></span>`).join("");
+    $("#previews").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { picked.splice(+b.dataset.i, 1); drawPicked(); }));
+  };
+  $("#attach").addEventListener("click", () => $("#files").click());
+  $("#files").addEventListener("change", (e) => {
+    picked = picked.concat([...e.target.files]).slice(0, 10);
+    e.target.value = "";
+    drawPicked();
+  });
   $("#add-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
     const title = f.get("title").trim();
+    const btn = $("#add-btn"), st = $("#up-status");
+    btn.disabled = true;
     try {
-      await rpc("add_item", { p_section: section, p_title: title, p_note: f.get("note").trim(), p_link: f.get("link").trim(), p_author: who });
+      const media = [];
+      for (let i = 0; i < picked.length; i++) {
+        st.textContent = `Загружаю ${i + 1} из ${picked.length}…`;
+        media.push(await uploadMedia(picked[i]));
+      }
+      st.textContent = "";
+      await rpc("add_item", { p_section: section, p_title: title, p_note: f.get("note").trim(), p_link: f.get("link").trim(), p_author: who, p_media: media });
       notify(`${sec.icon} ${who} добавил(а) в «${sec.title}»: ${title}`);
       e.target.reset();
+      picked = []; drawPicked();
       loadList();
-    } catch { alert("Не получилось добавить 😿"); }
+    } catch (err) { st.textContent = ""; alert(String(err.message || err).startsWith("Файл") ? err.message : "Не получилось добавить 😿"); }
+    btn.disabled = false;
   });
   loadList();
+}
+const MEDIA_URL = (p) => `${CFG.SUPABASE_URL}/storage/v1/object/public/media/${p}`;
+const MAX_MB = 50;
+async function uploadMedia(file) {
+  if (file.size > MAX_MB * 1048576) throw new Error(`Файл «${file.name}» больше ${MAX_MB} МБ`);
+  const isVideo = file.type.startsWith("video/");
+  const ext = ((file.name.match(/\.([a-z0-9]{2,5})$/i) || [])[1] || (isVideo ? "mp4" : "jpg")).toLowerCase();
+  const path = `${crypto.randomUUID()}.${ext}`;
+  const r = await fetch(`${CFG.SUPABASE_URL}/storage/v1/object/media/${path}`, {
+    method: "POST",
+    headers: { apikey: CFG.ANON_KEY, "Content-Type": file.type || (isVideo ? "video/mp4" : "image/jpeg"), "x-upsert": "false" },
+    body: file,
+  });
+  if (!r.ok) throw new Error(`Файл «${file.name}» не загрузился`);
+  return { p: path, t: isVideo ? "video" : "image" };
+}
+function mediaHtml(list) {
+  const ok = (Array.isArray(list) ? list : []).filter((m) => m && /^[0-9a-f-]{36}\.[a-z0-9]{2,5}$/.test(m.p));
+  if (!ok.length) return "";
+  return `<div class="media">${ok.map((m) => m.t === "video"
+    ? `<video controls playsinline preload="metadata" src="${esc(MEDIA_URL(m.p))}#t=0.1"></video>`
+    : `<a href="${esc(MEDIA_URL(m.p))}" target="_blank" rel="noopener noreferrer"><img loading="lazy" src="${esc(MEDIA_URL(m.p))}" alt=""></a>`).join("")}</div>`;
 }
 async function loadList() {
   const box = $("#list");
@@ -126,6 +174,7 @@ async function loadList() {
         <div class="body">
           <div class="t">${esc(i.title)}</div>
           ${i.note ? `<div class="n">${esc(i.note)}</div>` : ""}
+          ${mediaHtml(i.media)}
           ${safeUrl(i.link) ? `<a href="${esc(safeUrl(i.link))}" target="_blank" rel="noopener noreferrer">${esc(i.link)}</a>` : ""}
           <div class="meta">${esc(i.author)} · ${new Date(i.created_at).toLocaleDateString("ru")}</div>
         </div>
