@@ -48,6 +48,7 @@ function show(id) {
 }
 function route() {
   stopWatch();
+  if (who !== "Вика" && who !== "Витя") { code = who = null; store.set("code", null); store.set("who", null); }
   if (!code) return show("screen-code");
   show("screen-app");
   $("#me-name").textContent = who;
@@ -63,7 +64,7 @@ $("#code-form").addEventListener("submit", async (e) => {
   code = v;
   try {
     who = await rpc("check_code");
-    if (!who) throw 0;
+    if (who !== "Вика" && who !== "Витя") throw 0;
     store.set("code", code);
     store.set("who", who);
     route();
@@ -140,21 +141,32 @@ async function loadList() {
   } catch { box.innerHTML = `<div class="empty">Не удалось загрузить 😿</div>`; }
 }
 
-let yt = null, vid = null, applying = false, lastUrl = null;
+let pl = null, applying = false, lastUrl = null;
 
 function ytId(u) {
   const m = String(u).match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{11})/);
   return m ? m[1] : null;
 }
+// Возвращает {kind, src} для поддерживаемых площадок или null (тогда считаем прямой ссылкой на файл).
+function parseEmbed(u) {
+  let m = String(u).match(/rutube\.ru\/(?:video|play\/embed)\/([0-9a-f]{32})(?:\/?\?[^#]*?\bp=([\w-]+))?/i);
+  if (m) return { kind: "rutube", src: `https://rutube.ru/play/embed/${m[1]}` + (m[2] ? `?p=${m[2]}` : "") };
+  if (/(?:vk\.com|vkvideo\.ru)\/video_ext\.php/i.test(u)) {
+    return { kind: "vk", src: u + (/js_api=/.test(u) ? "" : "&js_api=1") };
+  }
+  m = String(u).match(/(?:vk\.com|vkvideo\.ru)\/video(-?\d+)_(\d+)/i);
+  if (m) return { kind: "vk", src: `https://vk.com/video_ext.php?oid=${m[1]}&id=${m[2]}&hd=2&js_api=1` };
+  return null;
+}
 function stopWatch() {
   clearInterval(watchTimer); watchTimer = null;
-  try { yt && yt.destroy && yt.destroy(); } catch {}
-  yt = vid = null; lastUrl = null;
+  try { pl && pl.destroy(); } catch {}
+  pl = null; lastUrl = null;
 }
 function renderWatch() {
   $("#content").innerHTML = `
     <div class="add">
-      <input id="w-url" placeholder="Ссылка на YouTube или прямая ссылка на видео (.mp4/.webm)">
+      <input id="w-url" placeholder="Ссылка: YouTube, Rutube, VK Видео или файл .mp4/.webm">
       <div class="row"><button class="btn" id="w-invite">Позвать смотреть</button><button class="btn ghost" id="w-sync">Все ко мне</button></div>
     </div>
     <div class="player" id="w-player"></div>`;
@@ -162,61 +174,130 @@ function renderWatch() {
     const url = $("#w-url").value.trim();
     if (!safeUrl(url)) return alert("Нужна ссылка, начинающаяся с http(s)://");
     await rpc("set_watch", { p_url: url, p_playing: false, p_pos: 0, p_by: who });
-    notify(`🎬 ${who} зовёт смотреть вместе! Заходи на сайт → «Совместный просмотр».`);
+    notify(`${who} зовёт смотреть вместе! Заходи на сайт → «Совместный просмотр».`);
     poll();
   });
   $("#w-sync").addEventListener("click", () => push());
   poll();
   watchTimer = setInterval(poll, 2000);
 }
-function curTime() {
-  if (yt && yt.getCurrentTime) return yt.getCurrentTime();
-  return vid ? vid.currentTime : 0;
-}
-function isPlaying() {
-  if (yt && yt.getPlayerState) return yt.getPlayerState() === 1;
-  return vid ? !vid.paused : false;
-}
 async function push() {
-  if (applying) return;
-  try { await rpc("set_watch", { p_url: lastUrl, p_playing: isPlaying(), p_pos: curTime(), p_by: who }); } catch {}
+  if (applying || !pl || !pl.ready()) return;
+  try { await rpc("set_watch", { p_url: lastUrl, p_playing: pl.playing(), p_pos: pl.time(), p_by: who }); } catch {}
 }
+
+// ---- адаптеры плееров: ready/time/playing/seek/play/pause/destroy ----
+function ytPlayer(box, id) {
+  box.innerHTML = `<div id="yt-host"></div>`;
+  let p = null;
+  const make = () => { p = new YT.Player("yt-host", {
+    videoId: id, playerVars: { playsinline: 1, rel: 0 },
+    events: { onStateChange: (e) => { if (e.data === 1 || e.data === 2) push(); } },
+  }); };
+  window.YT && YT.Player ? make() : (window.onYouTubeIframeAPIReady = make);
+  return {
+    ready: () => !!(p && p.getPlayerState),
+    time: () => p.getCurrentTime(),
+    playing: () => p.getPlayerState() === 1,
+    seek: (t) => p.seekTo(t, true),
+    play: () => p.playVideo(),
+    pause: () => p.pauseVideo(),
+    destroy: () => p && p.destroy && p.destroy(),
+  };
+}
+function fileVideo(box, url) {
+  box.innerHTML = `<video controls playsinline src="${esc(url)}"></video>`;
+  const v = box.querySelector("video");
+  ["play", "pause", "seeked"].forEach((ev) => v.addEventListener(ev, push));
+  return {
+    ready: () => true,
+    time: () => v.currentTime,
+    playing: () => !v.paused,
+    seek: (t) => (v.currentTime = t),
+    play: () => v.play().catch(() => {}),
+    pause: () => v.pause(),
+    destroy: () => {},
+  };
+}
+function rutubePlayer(box, src) {
+  box.innerHTML = `<iframe allow="autoplay; fullscreen; encrypted-media" allowfullscreen src="${esc(src)}"></iframe>`;
+  const f = box.querySelector("iframe");
+  let t = 0, playing = false, got = false;
+  const send = (type, data = {}) => f.contentWindow.postMessage(JSON.stringify({ type, data }), "*");
+  const onMsg = (e) => {
+    if (e.source !== f.contentWindow) return;
+    let m; try { m = typeof e.data === "string" ? JSON.parse(e.data) : e.data; } catch { return; }
+    if (!m || !m.type) return;
+    got = true;
+    if (m.type === "player:currentTime") t = +m.data.time || t;
+    if (m.type === "player:changeState") { playing = m.data.state === "playing"; push(); }
+  };
+  window.addEventListener("message", onMsg);
+  return {
+    ready: () => got,
+    time: () => t,
+    playing: () => playing,
+    seek: (x) => { send("player:setCurrentTime", { time: x }); t = x; },
+    play: () => send("player:play"),
+    pause: () => send("player:pause"),
+    destroy: () => window.removeEventListener("message", onMsg),
+  };
+}
+function vkPlayer(box, src) {
+  box.innerHTML = `<iframe allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen src="${esc(src)}"></iframe>`;
+  const f = box.querySelector("iframe");
+  let p = null, t = 0, playing = false;
+  const init = () => {
+    p = VK.VideoPlayer(f);
+    p.on("started", () => { playing = true; push(); });
+    p.on("resumed", () => { playing = true; push(); });
+    p.on("paused", () => { playing = false; push(); });
+    p.on("timeupdate", (a) => { t = typeof a === "number" ? a : +(a && a.time) || t; });
+  };
+  const load = () => (window.VK && VK.VideoPlayer ? init() : null);
+  if (window.VK && VK.VideoPlayer) load();
+  else {
+    const sc = document.createElement("script");
+    sc.src = "https://vk.com/js/api/videoplayer.js";
+    sc.onload = load;
+    document.head.appendChild(sc);
+  }
+  return {
+    ready: () => !!p,
+    time: () => t,
+    playing: () => playing,
+    seek: (x) => { p.seek(x); t = x; },
+    play: () => p.play(),
+    pause: () => p.pause(),
+    destroy: () => {},
+  };
+}
+
 function mount(url) {
   const box = $("#w-player");
   if (!box) return;
+  try { pl && pl.destroy(); } catch {}
   lastUrl = url;
-  yt = vid = null;
-  const id = ytId(url);
-  if (id) {
-    box.innerHTML = `<div id="yt-host"></div>`;
-    const make = () => { yt = new YT.Player("yt-host", {
-      videoId: id, playerVars: { playsinline: 1, rel: 0 },
-      events: { onStateChange: (e) => { if (e.data === 1 || e.data === 2) push(); } },
-    }); };
-    window.YT && YT.Player ? make() : (window.onYouTubeIframeAPIReady = make);
-  } else {
-    box.innerHTML = `<video controls playsinline src="${esc(url)}"></video>`;
-    vid = box.querySelector("video");
-    ["play", "pause", "seeked"].forEach((ev) => vid.addEventListener(ev, push));
-  }
+  const id = ytId(url), emb = parseEmbed(url);
+  pl = id ? ytPlayer(box, id)
+    : emb && emb.kind === "rutube" ? rutubePlayer(box, emb.src)
+    : emb && emb.kind === "vk" ? vkPlayer(box, emb.src)
+    : fileVideo(box, url);
 }
 async function poll() {
   if (section !== "watch") return;
   let w;
   try { w = await rpc("get_watch"); } catch { return; }
   if (!w || !w.url) return;
-  if (w.url !== lastUrl) {
-    mount(w.url);
-  }
-  const ready = (yt && yt.getPlayerState) || vid;
-  if (!ready) return;
+  if (w.url !== lastUrl) mount(w.url);
+  if (!pl || !pl.ready()) return;
   let target = w.pos;
   if (w.playing) target += w.elapsed;
   applying = true;
   try {
-    if (Math.abs(curTime() - target) > 2) yt ? yt.seekTo(target, true) : (vid.currentTime = target);
-    if (w.playing && !isPlaying()) yt ? yt.playVideo() : vid.play().catch(() => {});
-    if (!w.playing && isPlaying()) yt ? yt.pauseVideo() : vid.pause();
+    if (Math.abs(pl.time() - target) > 2) pl.seek(target);
+    if (w.playing && !pl.playing()) pl.play();
+    if (!w.playing && pl.playing()) pl.pause();
   } finally { setTimeout(() => (applying = false), 800); }
 }
 
