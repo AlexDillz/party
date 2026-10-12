@@ -12,11 +12,14 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// text — уже готовый HTML (<code> делает номерок копируемым по нажатию)
 async function tg(chat_id: number, text: string) {
   await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id, text }),
+    body: JSON.stringify({ chat_id, text, parse_mode: "HTML", disable_web_page_preview: true }),
   });
 }
 
@@ -36,7 +39,7 @@ Deno.serve(async (req) => {
     const { data: me } = await sb.from("users").select("name").eq("code", String(body.code)).maybeSingle();
     if (!me) return new Response("denied", { status: 403, headers: cors });
     const { data: other } = await sb.from("users").select("chat_id").neq("name", me.name).maybeSingle();
-    if (other?.chat_id) await tg(other.chat_id, String(body.text ?? "").slice(0, 500));
+    if (other?.chat_id) await tg(other.chat_id, esc(String(body.text ?? "").slice(0, 500)));
     return new Response("ok", { headers: cors });
   }
 
@@ -54,6 +57,6 @@ Deno.serve(async (req) => {
   if (!code || cmd === "/newcode") code = newCode();
   await sb.from("users").update({ code, chat_id: m.chat.id }).eq("tg_id", u.tg_id);
   const head = cmd === "/newcode" ? "Новый номерок (старый больше не работает)" : `Привет, ${u.name}! Твой номерок`;
-  await tg(m.chat.id, `${head}:\n\n${code}\n\n${SITE}\n\n/code — показать номерок\n/newcode — выдать новый`);
+  await tg(m.chat.id, `${head}:\n\n<code>${code}</code>\n\n${SITE}\n\n/code — показать номерок\n/newcode — выдать новый`);
   return new Response("ok");
 });

@@ -39,15 +39,15 @@ function notify(text) {
 
 // ---------- screens ----------
 function show(id) {
-  for (const s of ["screen-code", "screen-who", "screen-app"]) $("#" + s).hidden = s !== id;
+  for (const s of ["screen-code", "screen-app"]) $("#" + s).hidden = s !== id;
   document.body.dataset.theme = id === "screen-app" ? (who === "Вика" ? "vika" : "vitya") : "none";
 }
 function route() {
   stopWatch();
   if (!code) return show("screen-code");
-  if (!who) return show("screen-who");
   show("screen-app");
   $("#me-name").textContent = who;
+  $("#me-avatar").src = who === "Вика" ? "img/vika.png" : "img/vitya.png";
   renderTabs();
   renderSection();
 }
@@ -58,8 +58,10 @@ $("#code-form").addEventListener("submit", async (e) => {
   err.hidden = true;
   code = v;
   try {
-    if (!(await rpc("check_code"))) throw 0;
+    who = await rpc("check_code");
+    if (!who) throw 0;
     store.set("code", code);
+    store.set("who", who);
     route();
   } catch {
     code = null;
@@ -67,10 +69,9 @@ $("#code-form").addEventListener("submit", async (e) => {
     err.hidden = false;
   }
 });
-document.querySelectorAll(".who-btn").forEach((b) =>
-  b.addEventListener("click", () => { who = b.dataset.who; store.set("who", who); route(); }));
-$("#switch").addEventListener("click", () => { who = null; store.set("who", null); route(); });
-$("#logout").addEventListener("click", () => { code = who = null; store.set("code", null); store.set("who", null); route(); });
+$("#profile").addEventListener("click", () => {
+  if (confirm("Выйти из профиля?")) { code = who = null; store.set("code", null); store.set("who", null); route(); }
+});
 
 // ---------- tabs ----------
 function renderTabs() {
@@ -79,6 +80,8 @@ function renderTabs() {
   $("#tabs").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
     section = b.dataset.id; store.set("section", section); renderTabs(); renderSection();
   }));
+  const on = $("#tabs .on");
+  if (on) on.scrollIntoView({ inline: "center", block: "nearest" });
 }
 function renderSection() {
   stopWatch();
@@ -152,7 +155,7 @@ function renderWatch() {
     <div class="add">
       <input id="w-url" placeholder="Ссылка на YouTube или прямая ссылка на видео (.mp4/.webm)">
       <div class="row"><button class="btn" id="w-invite">🎬 Позвать смотреть</button><button class="btn ghost" id="w-sync">Все ко мне</button></div>
-      <div class="status" id="w-status">Вставь ссылку и нажми «Позвать» — партнёру придёт сообщение в Telegram, а видео откроется у вас обоих.</div>
+      <div class="status" id="w-status"></div>
     </div>
     <div class="player" id="w-player"></div>`;
   $("#w-invite").addEventListener("click", async () => {

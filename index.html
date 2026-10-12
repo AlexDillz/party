@@ -9,12 +9,11 @@
 </head>
 <body data-theme="none">
 
-<!-- 1. Ввод номерка -->
 <section id="screen-code" class="screen center">
   <div class="card">
-    <div class="logo">🐱</div>
+    <img class="hero" src="img/login.png" alt="">
     <h1>Мяу-мяу-мяу</h1>
-    <p class="muted">Введи «Мой номерок». Его выдаёт телеграм-бот.</p>
+    <p class="muted">Введи свой номерок</p>
     <form id="code-form">
       <input id="code-input" placeholder="xxxxx-xxxxx" autocomplete="off" autocapitalize="off" spellcheck="false">
       <button class="btn" type="submit">Войти</button>
@@ -23,24 +22,12 @@
   </div>
 </section>
 
-<!-- 2. Выбор профиля -->
-<section id="screen-who" class="screen center" hidden>
-  <div class="card">
-    <h1>Кто это?</h1>
-    <div class="who">
-      <button class="who-btn vika" data-who="Вика">🌸<span>Вика</span></button>
-      <button class="who-btn vitya" data-who="Витя">🌊<span>Витя</span></button>
-    </div>
-    <button class="link" id="logout">выйти</button>
-  </div>
-</section>
-
-<!-- 3. Приложение -->
 <div id="screen-app" hidden>
   <header>
-    <div class="brand">🐱 Мяу-мяу-мяу</div>
+    <button class="profile" id="profile" title="Выйти">
+      <img id="me-avatar" alt=""><span id="me-name"></span>
+    </button>
     <nav id="tabs"></nav>
-    <div class="me"><span id="me-name"></span> <button class="link" id="switch">сменить</button></div>
   </header>
   <main id="content"></main>
 </div>
