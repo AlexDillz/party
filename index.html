@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Мяу-мяу-мяу</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐱</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="none">
+
+<!-- 1. Ввод номерка -->
+<section id="screen-code" class="screen center">
+  <div class="card">
+    <div class="logo">🐱</div>
+    <h1>Мяу-мяу-мяу</h1>
+    <p class="muted">Введи «Мой номерок». Его выдаёт телеграм-бот.</p>
+    <form id="code-form">
+      <input id="code-input" placeholder="xxxxx-xxxxx" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button class="btn" type="submit">Войти</button>
+    </form>
+    <p id="code-error" class="error" hidden></p>
+  </div>
+</section>
+
+<!-- 2. Выбор профиля -->
+<section id="screen-who" class="screen center" hidden>
+  <div class="card">
+    <h1>Кто это?</h1>
+    <div class="who">
+      <button class="who-btn vika" data-who="Вика">🌸<span>Вика</span></button>
+      <button class="who-btn vitya" data-who="Витя">🌊<span>Витя</span></button>
+    </div>
+    <button class="link" id="logout">выйти</button>
+  </div>
+</section>
+
+<!-- 3. Приложение -->
+<div id="screen-app" hidden>
+  <header>
+    <div class="brand">🐱 Мяу-мяу-мяу</div>
+    <nav id="tabs"></nav>
+    <div class="me"><span id="me-name"></span> <button class="link" id="switch">сменить</button></div>
+  </header>
+  <main id="content"></main>
+</div>
+
+<script src="https://www.youtube.com/iframe_api" async></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
