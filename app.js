@@ -100,7 +100,7 @@ async function renderList() {
   el.innerHTML = `
     <form class="add" id="add-form">
       <input name="title" placeholder="${sec.icon} Что добавим?" required maxlength="200">
-      <textarea name="note" rows="2" placeholder="Заметка (необязательно)" maxlength="1000"></textarea>
+      <textarea name="note" rows="5" placeholder="Заметка (необязательно)" maxlength="1000"></textarea>
       <input name="link" placeholder="Ссылка (необязательно)" maxlength="500">
       <input type="file" name="files" id="files" accept="image/*,video/*" multiple hidden>
       <div class="previews" id="previews"></div>
@@ -114,11 +114,18 @@ async function renderList() {
     $("#previews").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { picked.splice(+b.dataset.i, 1); drawPicked(); }));
   };
   $("#attach").addEventListener("click", () => $("#files").click());
-  $("#files").addEventListener("change", (e) => {
-    picked = picked.concat([...e.target.files]).slice(0, 10);
-    e.target.value = "";
+  const addFiles = (list) => {
+    const ok = [...list].filter((f) => /^(image|video)\//.test(f.type));
+    if (!ok.length) return;
+    picked = picked.concat(ok).slice(0, 10);
     drawPicked();
-  });
+  };
+  $("#files").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
+  const form = $("#add-form");
+  ["dragenter", "dragover"].forEach((ev) => form.addEventListener(ev, (e) => { e.preventDefault(); form.classList.add("drop"); }));
+  ["dragleave", "drop"].forEach((ev) => form.addEventListener(ev, (e) => { e.preventDefault(); if (ev === "drop" || !form.contains(e.relatedTarget)) form.classList.remove("drop"); }));
+  form.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
+  form.addEventListener("paste", (e) => addFiles(e.clipboardData.files));
   $("#add-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
