@@ -186,8 +186,20 @@ function mediaHtml(list) {
   if (!ok.length) return "";
   return `<div class="media">${ok.map((m) => m.t === "video"
     ? `<video controls playsinline preload="metadata" src="${esc(MEDIA_URL(m.p))}#t=0.1"></video>`
-    : `<a href="${esc(MEDIA_URL(m.p))}" target="_blank" rel="noopener noreferrer"><img loading="lazy" src="${esc(MEDIA_URL(m.p))}" alt=""></a>`).join("")}</div>`;
+    : `<img class="zoom" loading="lazy" src="${esc(MEDIA_URL(m.p))}" alt="">`).join("")}</div>`;
 }
+// фото открывается поверх страницы; закрыть — тап, Esc или ✕
+function openPhoto(src) {
+  const box = document.createElement("div");
+  box.className = "lightbox";
+  box.innerHTML = `<img src="${esc(src)}" alt=""><button type="button" aria-label="Закрыть">✕</button>`;
+  const close = () => { box.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  box.addEventListener("click", close);
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(box);
+}
+document.addEventListener("click", (e) => { if (e.target.matches("img.zoom")) openPhoto(e.target.src); });
 async function loadList() {
   const box = $("#list");
   if (!box) return;

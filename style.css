@@ -80,3 +80,7 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
 .orig input{width:18px;height:18px;accent-color:var(--accent)}
 .add textarea{min-height:120px;resize:vertical}
 .add.drop{outline:2px dashed var(--accent);outline-offset:2px;background:var(--accent-2)}
+.media img.zoom{cursor:zoom-in}
+.lightbox{position:fixed;inset:0;z-index:50;background:#000d;display:flex;align-items:center;justify-content:center;padding:12px;cursor:zoom-out}
+.lightbox img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+.lightbox button{position:absolute;top:12px;right:14px;border:0;background:#0008;color:#fff;font-size:22px;width:40px;height:40px;border-radius:50%;cursor:pointer}
