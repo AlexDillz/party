@@ -121,3 +121,5 @@ body.watching main{padding-bottom:0}
 .stage.mini .ctl{margin-top:4px;min-height:0}
 .stage.mini .ctl .btn{padding:4px 10px;font-size:14px}
 #w-ad.off{background:#d33;color:#fff}
+#cam-sel{flex:1;min-width:0;padding:8px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);font:inherit;font-size:14px}
+.stage.mini #cam-sel{display:none}

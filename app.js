@@ -566,7 +566,10 @@ async function startCall() {
   callSt("Жду разрешения от браузера…");
   const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
   let stream = null;
-  for (const c of [{ audio, video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } }, { audio }, { video: true }]) {
+  const savedCam = store.get("cam");
+  const vid = { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } };
+  if (savedCam) vid.deviceId = { ideal: savedCam };
+  for (const c of [{ audio, video: vid }, { audio }, { video: true }]) {
     try { stream = await navigator.mediaDevices.getUserMedia(c); break; } catch {}
   }
   if (!$("#tiles")) { stream && stream.getTracks().forEach((t) => t.stop()); return; }
@@ -581,9 +584,39 @@ async function startCall() {
   $("#b-mic").disabled = !hasA; $("#b-cam").disabled = !hasV;
   call.stops.push(hasA ? meter(stream, "#l-me") : () => {});
   callSt(stream ? `Жду, пока зайдёт ${otherName()}…` : "Нет доступа к камере и микрофону — ты только смотришь и слушаешь");
+  fillCams();
   call.timer = setInterval(rtcPoll, 1000);
   rtcSend({ t: "hello", from: call.sid });
   rtcPoll();
+}
+
+// выбор камеры (например, «OBS Virtual Camera» для эффектов): подменяем видео на лету, звонок не рвётся
+async function fillCams() {
+  const sel = $("#cam-sel");
+  if (!sel) return;
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+    const cur = call.stream && call.stream.getVideoTracks()[0];
+    const curId = cur && cur.getSettings().deviceId;
+    sel.innerHTML = devs.map((d, i) => `<option value="${esc(d.deviceId)}" ${d.deviceId === curId ? "selected" : ""}>${esc(d.label || "Камера " + (i + 1))}</option>`).join("");
+    sel.hidden = devs.length < 2 || !cur;
+  } catch { sel.hidden = true; }
+}
+async function switchCam(id) {
+  if (!call.on || !call.stream) return;
+  try {
+    const ns = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: id }, width: { ideal: 640 }, height: { ideal: 480 } } });
+    const nt = ns.getVideoTracks()[0];
+    const old = call.stream.getVideoTracks()[0];
+    nt.enabled = old ? old.enabled : true;
+    if (old) { call.stream.removeTrack(old); old.stop(); }
+    call.stream.addTrack(nt);
+    const sender = call.pc && call.pc.getSenders().find((x) => x.track && x.track.kind === "video");
+    if (sender) await sender.replaceTrack(nt);
+    const vm = $("#v-me"); vm.srcObject = call.stream; vm.play().catch(() => {});
+    store.set("cam", id);
+  } catch { callSt("Не удалось переключить камеру"); }
+  fillCams();
 }
 function setTracks(kind, on) {
   if (!call.stream) return;
@@ -706,8 +739,11 @@ addEventListener("pagehide", stopCall);
 
 $("#call-join").addEventListener("click", startCall);
 $("#call-leave").addEventListener("click", stopCall);
-$("#b-cam").addEventListener("click", () => setTracks("video", !trackOn("video")));
-$("#b-mic").addEventListener("click", () => setTracks("audio", !trackOn("audio")));
+// после клика убираем фокус с кнопки, иначе Пробел потом нажмёт её снова (выключит камеру или микрофон)
+$("#b-cam").addEventListener("click", (e) => { setTracks("video", !trackOn("video")); e.currentTarget.blur(); });
+$("#b-mic").addEventListener("click", (e) => { setTracks("audio", !trackOn("audio")); e.currentTarget.blur(); });
+$("#call-join").addEventListener("click", (e) => e.currentTarget.blur());
+$("#cam-sel").addEventListener("change", (e) => { switchCam(e.target.value); e.target.blur(); });
 $("#v-other").addEventListener("click", (e) => e.target.play().catch(() => {}));
 $("#stage-open").addEventListener("click", () => { section = "watch"; store.set("section", section); renderTabs(); renderSection(); });
 $("#stage-close").addEventListener("click", () => { if (confirm("Закрыть просмотр и звонок?")) stopWatch(); });
