@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Мяу-мяу-мяу</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐱</text></svg>">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body data-theme="none">
 
@@ -30,10 +30,31 @@
     <nav id="tabs"></nav>
   </header>
   <main id="content"></main>
+  <div id="stage" class="stage" hidden>
+    <div class="stage-bar"><span>Совместный просмотр</span><button type="button" id="stage-open" title="Открыть">⤢</button><button type="button" id="stage-close" title="Закрыть">✕</button></div>
+    <div class="player" id="w-player"></div>
+    <div class="call">
+      <div class="row"><button class="btn" id="call-join">📹 Включить камеру и микрофон</button><button class="btn ghost" id="call-leave" hidden>Выйти из звонка</button></div>
+      <div class="tiles" id="tiles" hidden>
+        <div class="tile">
+          <div class="vbox"><video id="v-me" class="me" muted playsinline autoplay></video><span class="tname" id="n-me"></span></div>
+          <div class="lvl"><i id="l-me"></i></div>
+          <div class="ctl"><button type="button" class="btn ghost" id="b-cam" title="Камера">📷</button><button type="button" class="btn ghost" id="b-mic" title="Микрофон">🎤</button></div>
+        </div>
+        <div class="tile">
+          <div class="vbox"><video id="v-other" playsinline autoplay></video><span class="tname" id="n-other"></span></div>
+          <div class="lvl"><i id="l-other"></i></div>
+          <div class="ctl"><span class="ostate" id="o-state"></span></div>
+        </div>
+      </div>
+      <div class="status" id="call-status"></div>
+    </div>
+  </div>
+  <div id="below"></div>
 </div>
 
 <script src="https://www.youtube.com/iframe_api" async></script>
 <script src="config.js"></script>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

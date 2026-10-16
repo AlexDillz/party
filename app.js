@@ -90,8 +90,19 @@ function renderTabs() {
   if (on) on.scrollIntoView({ inline: "center", block: "nearest" });
 }
 function renderSection() {
-  stopWatch();
+  clearInterval(chatTimer); chatTimer = null; lastMsg = 0;
+  $("#below").innerHTML = "";
   section === "watch" ? renderWatch() : renderList();
+  layoutStage();
+}
+// Плеер и звонок (#stage) живут вне вкладок: на «Совместном просмотре» они в потоке страницы, на остальных вкладках — маленькое окошко в углу.
+function layoutStage() {
+  const st = $("#stage");
+  if (!st) return;
+  const inWatch = section === "watch";
+  st.hidden = !(watchOn && (inWatch || lastUrl || call.on));
+  st.classList.toggle("mini", !inWatch);
+  document.body.classList.toggle("watching", inWatch);
 }
 
 async function renderList() {
@@ -234,7 +245,7 @@ async function loadList() {
   } catch { box.innerHTML = `<div class="empty">Не удалось загрузить 😿</div>`; }
 }
 
-let pl = null, applying = false, lastUrl = null, host = null, fresh = false, chatTimer = null, saveTimer = null, lastMsg = 0;
+let watchOn = false, pl = null, applying = false, lastUrl = null, host = null, fresh = false, chatTimer = null, saveTimer = null, lastMsg = 0;
 
 function ytId(u) {
   const m = String(u).match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{11})/);
@@ -257,7 +268,9 @@ function stopWatch() {
   clearInterval(watchTimer); clearInterval(chatTimer); clearInterval(saveTimer);
   watchTimer = chatTimer = saveTimer = null;
   try { pl && pl.destroy(); } catch {}
-  pl = null; lastUrl = null; host = null; lastMsg = 0;
+  pl = null; lastUrl = null; host = null; lastMsg = 0; watchOn = false;
+  const box = $("#w-player"); if (box) box.innerHTML = "";
+  const st = $("#stage"); if (st) st.hidden = true;
 }
 // ведущий при выходе ставит паузу и сохраняет позицию (keepalive — чтобы запрос ушёл при закрытии вкладки)
 function saveState() {
@@ -275,26 +288,10 @@ function renderWatch() {
   $("#content").innerHTML = `
     <div class="add">
       <input id="w-url" placeholder="Ссылка: YouTube, Rutube, VK Видео или файл .mp4/.webm">
-      <div class="row"><button class="btn" id="w-invite">Позвать смотреть</button><button class="btn ghost" id="w-sync">Все ко мне</button></div>
+      <div class="row"><button class="btn" id="w-invite">Позвать смотреть</button><button class="btn ghost" id="w-sync">Взять пульт</button></div>
       <div class="status" id="w-status"></div>
-    </div>
-    <div class="player" id="w-player"></div>
-    <div class="call">
-      <div class="row"><button class="btn" id="call-join">📹 Включить камеру и микрофон</button><button class="btn ghost" id="call-leave" hidden>Выйти из звонка</button></div>
-      <div class="tiles" id="tiles" hidden>
-        <div class="tile">
-          <div class="vbox"><video id="v-me" class="me" muted playsinline autoplay></video><span class="tname">${esc(who)} (ты)</span></div>
-          <div class="lvl"><i id="l-me"></i></div>
-          <div class="ctl"><button type="button" class="btn ghost" id="b-cam" title="Камера">📷</button><button type="button" class="btn ghost" id="b-mic" title="Микрофон">🎤</button></div>
-        </div>
-        <div class="tile">
-          <div class="vbox"><video id="v-other" playsinline autoplay></video><span class="tname">${esc(otherName())}</span></div>
-          <div class="lvl"><i id="l-other"></i></div>
-          <div class="ctl"><span class="ostate" id="o-state"></span></div>
-        </div>
-      </div>
-      <div class="status" id="call-status"></div>
-    </div>
+    </div>`;
+  $("#below").innerHTML = `
     <div class="chat">
       <div class="msgs" id="msgs"></div>
       <div class="emojis" id="emojis" hidden>${EMOJI.map((e) => `<button type="button">${e}</button>`).join("")}</div>
@@ -304,6 +301,8 @@ function renderWatch() {
         <button class="btn">→</button>
       </form>
     </div>`;
+  $("#n-me").textContent = `${who} (ты)`;
+  $("#n-other").textContent = otherName();
   $("#w-invite").addEventListener("click", async () => {
     const url = $("#w-url").value.trim();
     if (!safeUrl(url)) return alert("Нужна ссылка, начинающаяся с http(s)://");
@@ -312,11 +311,6 @@ function renderWatch() {
     poll();
   });
   $("#w-sync").addEventListener("click", () => push(true));
-  $("#call-join").addEventListener("click", startCall);
-  $("#call-leave").addEventListener("click", stopCall);
-  $("#b-cam").addEventListener("click", () => setTracks("video", !trackOn("video")));
-  $("#b-mic").addEventListener("click", () => setTracks("audio", !trackOn("audio")));
-  $("#v-other").addEventListener("click", (e) => e.target.play().catch(() => {}));
   $("#emoji-btn").addEventListener("click", () => { const e = $("#emojis"); e.hidden = !e.hidden; });
   $("#emojis").addEventListener("click", (e) => {
     if (e.target.tagName !== "BUTTON") return;
@@ -329,10 +323,13 @@ function renderWatch() {
     i.value = "";
     try { await rpc("send_msg", { p_author: who, p_body: body }); loadMsgs(); } catch {}
   });
+  if (!watchOn) {
+    watchOn = true;
+    watchTimer = setInterval(poll, 2000);
+    saveTimer = setInterval(() => { if (host === who && pl && pl.ready() && pl.playing()) push(); }, 5000);
+  }
   poll(); loadMsgs();
-  watchTimer = setInterval(poll, 2000);
   chatTimer = setInterval(loadMsgs, 2000);
-  saveTimer = setInterval(() => { if (host === who && pl && pl.ready() && pl.playing()) push(); }, 5000);
 }
 async function loadMsgs() {
   const box = $("#msgs");
@@ -450,6 +447,7 @@ function mount(url) {
   if (!box) return;
   try { pl && pl.destroy(); } catch {}
   lastUrl = url;
+  layoutStage();
   fresh = true; // первый раз применяем сохранённое место, даже если ты ведущий
   const id = ytId(url), emb = parseEmbed(url);
   pl = id ? ytPlayer(box, id)
@@ -458,7 +456,7 @@ function mount(url) {
     : fileVideo(box, url);
 }
 async function poll() {
-  if (section !== "watch") return;
+  if (!watchOn) return;
   let w;
   try { w = await rpc("get_watch"); } catch { return; }
   if (!w || !w.url) return;
@@ -531,8 +529,9 @@ async function startCall() {
   for (const c of [{ audio, video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } }, { audio }, { video: true }]) {
     try { stream = await navigator.mediaDevices.getUserMedia(c); break; } catch {}
   }
-  if (section !== "watch" || !$("#tiles")) { stream && stream.getTracks().forEach((t) => t.stop()); return; }
+  if (!$("#tiles")) { stream && stream.getTracks().forEach((t) => t.stop()); return; }
   Object.assign(call, { on: true, stream, sid: rid(), remote: null, after: 0, pc: null, queue: [], rs: null, stops: [], busy: false });
+  layoutStage();
   $("#call-join").hidden = true;
   $("#tiles").hidden = false;
   $("#call-leave").hidden = false;
@@ -661,7 +660,16 @@ function stopCall() {
   try { call.actx && call.actx.close(); } catch {}
   const vm = $("#v-me"); if (vm) vm.srcObject = null;
   if ($("#tiles")) { $("#tiles").hidden = true; $("#call-leave").hidden = true; $("#call-join").hidden = false; callSt(""); }
+  layoutStage();
 }
 addEventListener("pagehide", stopCall);
+
+$("#call-join").addEventListener("click", startCall);
+$("#call-leave").addEventListener("click", stopCall);
+$("#b-cam").addEventListener("click", () => setTracks("video", !trackOn("video")));
+$("#b-mic").addEventListener("click", () => setTracks("audio", !trackOn("audio")));
+$("#v-other").addEventListener("click", (e) => e.target.play().catch(() => {}));
+$("#stage-open").addEventListener("click", () => { section = "watch"; store.set("section", section); renderTabs(); renderSection(); });
+$("#stage-close").addEventListener("click", () => { if (confirm("Закрыть просмотр и звонок?")) stopWatch(); });
 
 route();

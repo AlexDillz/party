@@ -101,3 +101,23 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
 .ostate{font-size:13px;color:var(--muted)}
 .call .row{display:flex;gap:8px}
 @media (max-width:600px){.call .row{flex-direction:column}}
+
+/* плеер + звонок: в потоке на вкладке просмотра, мини-окошко на остальных */
+.stage{max-width:760px;margin:0 auto;padding:0 16px}
+.stage-bar{display:none}
+#below{max-width:760px;margin:0 auto;padding:0 16px 60px}
+body.watching main{padding-bottom:0}
+.stage.mini{position:fixed;right:10px;bottom:10px;z-index:30;width:min(300px,64vw);max-width:none;margin:0;padding:6px;background:var(--card);border-radius:14px;box-shadow:0 6px 30px var(--shadow),0 0 0 1px var(--line)}
+.stage.mini .stage-bar{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);padding:0 2px 4px}
+.stage.mini .stage-bar span{flex:1}
+.stage.mini .stage-bar button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 6px}
+.stage.mini .player{margin:0;border-radius:8px}
+.stage.mini .player:empty{display:none}
+.stage.mini .call{margin:6px 0 0}
+.stage.mini .call>.row,.stage.mini .call .status,.stage.mini .tname,.stage.mini .ostate{display:none}
+.stage.mini .tiles{margin-top:0;gap:6px}
+.stage.mini .tile{padding:0;box-shadow:none;background:none}
+.stage.mini .vbox{border-radius:8px}
+.stage.mini .lvl{height:5px;margin-top:4px}
+.stage.mini .ctl{margin-top:4px;min-height:0}
+.stage.mini .ctl .btn{padding:4px 10px;font-size:14px}
