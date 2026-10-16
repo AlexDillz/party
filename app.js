@@ -245,7 +245,7 @@ async function loadList() {
   } catch { box.innerHTML = `<div class="empty">Не удалось загрузить 😿</div>`; }
 }
 
-let watchOn = false, pl = null, applying = false, lastUrl = null, host = null, fresh = false, chatTimer = null, saveTimer = null, lastMsg = 0;
+let adMine = false, adManual = false, adSentAt = 0, heldByAd = false, adTimer = null, watchOn = false, pl = null, applying = false, lastUrl = null, host = null, fresh = false, chatTimer = null, saveTimer = null, lastMsg = 0;
 
 function ytId(u) {
   const m = String(u).match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{11})/);
@@ -262,7 +262,21 @@ function parseEmbed(u) {
   if (m) return { kind: "vk", src: `https://vk.com/video_ext.php?oid=${m[1]}&id=${m[2]}&hd=2&js_api=1` };
   return null;
 }
+// раз в секунду смотрим, есть ли у меня реклама (сама или кнопкой), и сообщаем второму
+function adTick() {
+  const cur = adSelf();
+  const now = Date.now();
+  if (cur !== adMine || (cur && now - adSentAt > 8000)) {
+    adMine = cur; adSentAt = now;
+    rpc("set_ad", { p_who: who, p_on: cur }).catch(() => {});
+  }
+  const b = $("#w-ad");
+  if (b) { b.textContent = adManual ? "Реклама закончилась" : "У меня реклама"; b.classList.toggle("off", adManual); }
+}
 function stopWatch() {
+  clearInterval(adTimer); adTimer = null;
+  if (adMine) { adMine = false; rpc("set_ad", { p_who: who, p_on: false }).catch(() => {}); }
+  adManual = false; heldByAd = false;
   stopCall();
   saveState(); // оставляем видео на паузе, чтобы место запомнилось
   clearInterval(watchTimer); clearInterval(chatTimer); clearInterval(saveTimer);
@@ -274,7 +288,7 @@ function stopWatch() {
 }
 // ведущий при выходе ставит паузу и сохраняет позицию (keepalive — чтобы запрос ушёл при закрытии вкладки)
 function saveState() {
-  if (!pl || !pl.ready() || host !== who || !lastUrl) return;
+  if (!pl || !pl.ready() || host !== who || !lastUrl || adSelf()) return;
   fetch(`${CFG.SUPABASE_URL}/rest/v1/rpc/set_watch`, {
     method: "POST", keepalive: true,
     headers: { "Content-Type": "application/json", apikey: CFG.ANON_KEY },
@@ -288,7 +302,7 @@ function renderWatch() {
   $("#content").innerHTML = `
     <div class="add">
       <input id="w-url" placeholder="Ссылка: YouTube, Rutube, VK Видео или файл .mp4/.webm">
-      <div class="row"><button class="btn" id="w-invite">Позвать смотреть</button><button class="btn ghost" id="w-sync">Взять пульт</button></div>
+      <div class="row"><button class="btn" id="w-invite">Позвать смотреть</button><button class="btn ghost" id="w-sync">Взять пульт</button><button class="btn ghost" id="w-ad">У меня реклама</button></div>
       <div class="status" id="w-status"></div>
     </div>`;
   $("#below").innerHTML = `
@@ -311,6 +325,7 @@ function renderWatch() {
     poll();
   });
   $("#w-sync").addEventListener("click", () => push(true));
+  $("#w-ad").addEventListener("click", () => { adManual = !adManual; adTick(); });
   $("#emoji-btn").addEventListener("click", () => { const e = $("#emojis"); e.hidden = !e.hidden; });
   $("#emojis").addEventListener("click", (e) => {
     if (e.target.tagName !== "BUTTON") return;
@@ -326,6 +341,7 @@ function renderWatch() {
   if (!watchOn) {
     watchOn = true;
     watchTimer = setInterval(poll, 2000);
+    adTimer = setInterval(adTick, 1000);
     saveTimer = setInterval(() => { if (host === who && pl && pl.ready() && pl.playing()) push(); }, 5000);
   }
   poll(); loadMsgs();
@@ -346,8 +362,9 @@ async function loadMsgs() {
   box.scrollTop = box.scrollHeight;
 }
 // Двигать общее состояние может только ведущий; take=true — забрать пульт себе.
+const adSelf = () => adManual || !!(pl && pl.inAd && pl.inAd());
 async function push(take = false) {
-  if (applying || !pl || !pl.ready()) return;
+  if (applying || !pl || !pl.ready() || adSelf()) return;
   if (!take && host && host !== who) return;
   try {
     await rpc("set_watch", { p_url: lastUrl, p_playing: pl.playing(), p_pos: pl.time(), p_by: who, p_take: take });
@@ -358,7 +375,7 @@ async function push(take = false) {
 // ---- адаптеры плееров: ready/time/playing/seek/play/pause/destroy ----
 function ytPlayer(box, id) {
   box.innerHTML = `<div id="yt-host"></div>`;
-  let p = null;
+  let p = null, mainDur = 0;
   const make = () => { p = new YT.Player("yt-host", {
     videoId: id, playerVars: { playsinline: 1, rel: 0 },
     events: { onStateChange: (e) => { if (e.data === 1 || e.data === 2) push(); } },
@@ -372,6 +389,16 @@ function ytPlayer(box, id) {
     play: () => p.playVideo(),
     pause: () => p.pauseVideo(),
     destroy: () => p && p.destroy && p.destroy(),
+    // реклама: у ролика другой id или другая длительность (признаки косвенные, поэтому есть ещё кнопка вручную)
+    inAd: () => {
+      try {
+        const d = p.getVideoData && p.getVideoData();
+        if (d && d.video_id && d.video_id !== id) return true;
+        const dur = p.getDuration();
+        if (dur > 0 && !mainDur) mainDur = dur;
+        return mainDur > 0 && dur > 0 && Math.abs(dur - mainDur) > 2;
+      } catch { return false; }
+    },
   };
 }
 function fileVideo(box, url) {
@@ -465,6 +492,19 @@ async function poll() {
   if (st) st.textContent = host ? `Пульт у: ${host}` : "";
   if (w.url !== lastUrl) mount(w.url);
   if (!pl || !pl.ready()) return;
+  const adOther = w.ad && w.ad !== who ? w.ad : null;
+  const st2 = $("#w-status");
+  if (st2) st2.textContent = (host ? `Пульт у: ${host}` : "") + (w.ad ? `${host ? " · " : ""}реклама у ${w.ad}, ждём` : "");
+  if (adMine) return; // у меня реклама: ничего не применяем, пусть доиграет
+  if (adOther) {
+    if (pl.playing()) { applying = true; pl.pause(); setTimeout(() => (applying = false), 800); }
+    heldByAd = true;
+    return;
+  }
+  if (heldByAd) {
+    heldByAd = false;
+    if (host === who) { applying = false; try { pl.play(); } catch {} setTimeout(() => push(), 1500); }
+  }
   if (host === who && !fresh) return; // ведущий сам управляет, подстраиваются остальные
   fresh = false;
   let target = w.pos;

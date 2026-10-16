@@ -120,3 +120,4 @@ body.watching main{padding-bottom:0}
 .stage.mini .lvl{height:5px;margin-top:4px}
 .stage.mini .ctl{margin-top:4px;min-height:0}
 .stage.mini .ctl .btn{padding:4px 10px;font-size:14px}
+#w-ad.off{background:#d33;color:#fff}
