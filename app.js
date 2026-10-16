@@ -252,6 +252,7 @@ function parseEmbed(u) {
   return null;
 }
 function stopWatch() {
+  stopCall();
   saveState(); // оставляем видео на паузе, чтобы место запомнилось
   clearInterval(watchTimer); clearInterval(chatTimer); clearInterval(saveTimer);
   watchTimer = chatTimer = saveTimer = null;
@@ -278,6 +279,22 @@ function renderWatch() {
       <div class="status" id="w-status"></div>
     </div>
     <div class="player" id="w-player"></div>
+    <div class="call">
+      <div class="row"><button class="btn" id="call-join">📹 Включить камеру и микрофон</button><button class="btn ghost" id="call-leave" hidden>Выйти из звонка</button></div>
+      <div class="tiles" id="tiles" hidden>
+        <div class="tile">
+          <div class="vbox"><video id="v-me" class="me" muted playsinline autoplay></video><span class="tname">${esc(who)} (ты)</span></div>
+          <div class="lvl"><i id="l-me"></i></div>
+          <div class="ctl"><button type="button" class="btn ghost" id="b-cam" title="Камера">📷</button><button type="button" class="btn ghost" id="b-mic" title="Микрофон">🎤</button></div>
+        </div>
+        <div class="tile">
+          <div class="vbox"><video id="v-other" playsinline autoplay></video><span class="tname">${esc(otherName())}</span></div>
+          <div class="lvl"><i id="l-other"></i></div>
+          <div class="ctl"><span class="ostate" id="o-state"></span></div>
+        </div>
+      </div>
+      <div class="status" id="call-status"></div>
+    </div>
     <div class="chat">
       <div class="msgs" id="msgs"></div>
       <div class="emojis" id="emojis" hidden>${EMOJI.map((e) => `<button type="button">${e}</button>`).join("")}</div>
@@ -295,6 +312,11 @@ function renderWatch() {
     poll();
   });
   $("#w-sync").addEventListener("click", () => push(true));
+  $("#call-join").addEventListener("click", startCall);
+  $("#call-leave").addEventListener("click", stopCall);
+  $("#b-cam").addEventListener("click", () => setTracks("video", !trackOn("video")));
+  $("#b-mic").addEventListener("click", () => setTracks("audio", !trackOn("audio")));
+  $("#v-other").addEventListener("click", (e) => e.target.play().catch(() => {}));
   $("#emoji-btn").addEventListener("click", () => { const e = $("#emojis"); e.hidden = !e.hidden; });
   $("#emojis").addEventListener("click", (e) => {
     if (e.target.tagName !== "BUTTON") return;
@@ -456,5 +478,190 @@ async function poll() {
     if (!w.playing && pl.playing()) pl.pause();
   } finally { setTimeout(() => (applying = false), 800); }
 }
+
+// ---- звонок (WebRTC): сигналы ходят через rtc_send / rtc_poll, видео и звук — напрямую между устройствами ----
+const ICE = [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun.cloudflare.com:3478" }];
+const call = { on: false, sendQ: Promise.resolve(), lastRestart: 0 };
+const rid = () => crypto.randomUUID().slice(0, 8);
+const callSt = (t) => { const el = $("#call-status"); if (el) el.textContent = t; };
+const otherName = () => (who === "Вика" ? "Витя" : "Вика");
+
+// сигналы уходят строго по очереди, чтобы offer не обгонял свои ice-кандидаты
+function rtcSend(data, keepalive = false) {
+  if (keepalive) {
+    if (!code) return;
+    fetch(`${CFG.SUPABASE_URL}/rest/v1/rpc/rtc_send`, {
+      method: "POST", keepalive: true,
+      headers: { "Content-Type": "application/json", apikey: CFG.ANON_KEY },
+      body: JSON.stringify({ p_code: code, p_from: who, p_data: data }),
+    }).catch(() => {});
+    return;
+  }
+  call.sendQ = call.sendQ.then(() => rpc("rtc_send", { p_from: who, p_data: data })).catch(() => {});
+}
+
+// полоска громкости: читаем уровень звука из потока
+function meter(stream, sel) {
+  if (!call.actx || !stream.getAudioTracks().length) return () => {};
+  const src = call.actx.createMediaStreamSource(stream), an = call.actx.createAnalyser();
+  an.fftSize = 512; src.connect(an);
+  const buf = new Uint8Array(an.fftSize);
+  let raf = 0, dead = false;
+  const tick = () => {
+    if (dead) return;
+    an.getByteTimeDomainData(buf);
+    let s = 0;
+    for (const v of buf) { const x = (v - 128) / 128; s += x * x; }
+    const el = $(sel);
+    if (el) el.style.width = Math.min(100, Math.sqrt(s / buf.length) * 400).toFixed(0) + "%";
+    raf = requestAnimationFrame(tick);
+  };
+  tick();
+  return () => { dead = true; cancelAnimationFrame(raf); try { src.disconnect(); } catch {} const el = $(sel); if (el) el.style.width = "0"; };
+}
+
+async function startCall() {
+  if (call.on) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  try { call.actx = AC ? new AC() : null; call.actx && call.actx.resume(); } catch { call.actx = null; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return callSt("Этот браузер не умеет камеру и микрофон 😿");
+  callSt("Жду разрешения от браузера…");
+  const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  let stream = null;
+  for (const c of [{ audio, video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } }, { audio }, { video: true }]) {
+    try { stream = await navigator.mediaDevices.getUserMedia(c); break; } catch {}
+  }
+  if (section !== "watch" || !$("#tiles")) { stream && stream.getTracks().forEach((t) => t.stop()); return; }
+  Object.assign(call, { on: true, stream, sid: rid(), remote: null, after: 0, pc: null, queue: [], rs: null, stops: [], busy: false });
+  $("#call-join").hidden = true;
+  $("#tiles").hidden = false;
+  $("#call-leave").hidden = false;
+  const vm = $("#v-me");
+  if (stream && stream.getVideoTracks().length) { vm.srcObject = stream; vm.play().catch(() => {}); }
+  const hasA = !!(stream && stream.getAudioTracks().length), hasV = !!(stream && stream.getVideoTracks().length);
+  $("#b-mic").disabled = !hasA; $("#b-cam").disabled = !hasV;
+  call.stops.push(hasA ? meter(stream, "#l-me") : () => {});
+  callSt(stream ? `Жду, пока зайдёт ${otherName()}…` : "Нет доступа к камере и микрофону — ты только смотришь и слушаешь");
+  call.timer = setInterval(rtcPoll, 1000);
+  rtcSend({ t: "hello", from: call.sid });
+  rtcPoll();
+}
+function setTracks(kind, on) {
+  if (!call.stream) return;
+  (kind === "audio" ? call.stream.getAudioTracks() : call.stream.getVideoTracks()).forEach((t) => (t.enabled = on));
+  const b = $(kind === "audio" ? "#b-mic" : "#b-cam");
+  b.classList.toggle("off", !on);
+  b.textContent = kind === "audio" ? (on ? "🎤" : "🔇") : (on ? "📷" : "🚫");
+  sendState();
+}
+const trackOn = (kind) => { const t = call.stream && (kind === "audio" ? call.stream.getAudioTracks() : call.stream.getVideoTracks())[0]; return !!(t && t.enabled); };
+function sendState() {
+  if (call.on && call.remote) rtcSend({ t: "state", from: call.sid, to: call.remote, cam: trackOn("video"), mic: trackOn("audio") });
+}
+function resetPc() {
+  if (call.pc) { try { call.pc.close(); } catch {} }
+  call.pc = null; call.queue = []; call.rs = null;
+  (call.stops || []).splice(1).forEach((f) => f()); // всё, кроме полоски «меня»
+  const vo = $("#v-other"); if (vo) vo.srcObject = null;
+  const b = $("#o-state"); if (b) b.textContent = "";
+}
+function ensurePc() {
+  if (call.pc) return call.pc;
+  const pc = (call.pc = new RTCPeerConnection({ iceServers: ICE }));
+  call.rs = new MediaStream();
+  const tracks = call.stream ? call.stream.getTracks() : [];
+  tracks.forEach((t) => pc.addTrack(t, call.stream));
+  if (who === "Витя") ["audio", "video"].forEach((k) => { if (!tracks.some((t) => t.kind === k)) pc.addTransceiver(k, { direction: "recvonly" }); });
+  pc.onicecandidate = (e) => { if (e.candidate && call.pc === pc) rtcSend({ t: "ice", from: call.sid, to: call.remote, c: e.candidate.toJSON() }); };
+  pc.ontrack = (e) => {
+    if (call.pc !== pc) return;
+    call.rs.addTrack(e.track);
+    const vo = $("#v-other");
+    if (vo) { vo.srcObject = call.rs; vo.play().catch(() => callSt("Тапни по видео собеседника, чтобы включить звук")); }
+    if (e.track.kind === "audio") call.stops.push(meter(new MediaStream([e.track]), "#l-other"));
+  };
+  pc.onconnectionstatechange = () => {
+    if (call.pc !== pc) return;
+    const s = pc.connectionState;
+    if (s === "connected") { callSt(`На связи с ${otherName()} 💞`); sendState(); }
+    else if (s === "connecting") callSt("Соединяюсь…");
+    else if (s === "failed") restartCall();
+  };
+  return pc;
+}
+function restartCall() {
+  if (!call.on || Date.now() - call.lastRestart < 10000) return;
+  call.lastRestart = Date.now();
+  resetPc(); call.remote = null; call.sid = rid();
+  callSt("Связь пропала, переподключаюсь…");
+  rtcSend({ t: "hello", from: call.sid });
+}
+async function makeOffer() {
+  const pc = ensurePc();
+  await pc.setLocalDescription(await pc.createOffer());
+  rtcSend({ t: "offer", from: call.sid, to: call.remote, sdp: pc.localDescription.toJSON() });
+}
+async function flushQueue() {
+  const q = call.queue; call.queue = [];
+  for (const c of q) { try { await call.pc.addIceCandidate(c); } catch {} }
+}
+async function rtcHandle(d) {
+  if (!call.on || !d || !d.t) return;
+  if (d.t === "hello") {
+    if (d.from === call.remote) return;
+    resetPc(); call.remote = d.from;
+    callSt("Соединяюсь…");
+    rtcSend({ t: "hello", from: call.sid });
+    if (who === "Витя") await makeOffer();
+    return;
+  }
+  if (d.t === "bye") {
+    if (d.from === call.remote) { resetPc(); call.remote = null; callSt(`${otherName()} вышел(а) из звонка`); }
+    return;
+  }
+  if (d.to !== call.sid) return;
+  if (d.t === "offer") {
+    if (d.from !== call.remote) { resetPc(); call.remote = d.from; }
+    const pc = ensurePc();
+    await pc.setRemoteDescription(d.sdp);
+    await flushQueue();
+    await pc.setLocalDescription(await pc.createAnswer());
+    rtcSend({ t: "answer", from: call.sid, to: call.remote, sdp: pc.localDescription.toJSON() });
+  } else if (d.t === "answer") {
+    if (d.from === call.remote && call.pc && call.pc.signalingState === "have-local-offer") {
+      await call.pc.setRemoteDescription(d.sdp);
+      await flushQueue();
+    }
+  } else if (d.t === "ice") {
+    if (d.from !== call.remote) return;
+    if (call.pc && call.pc.remoteDescription) { try { await call.pc.addIceCandidate(d.c); } catch {} }
+    else call.queue.push(d.c);
+  } else if (d.t === "state") {
+    const b = $("#o-state");
+    if (b && d.from === call.remote) b.textContent = (d.cam ? "" : "🚫 камера ") + (d.mic ? "" : "🔇 микрофон");
+  }
+}
+async function rtcPoll() {
+  if (!call.on || call.busy) return;
+  call.busy = true;
+  try {
+    const list = await rpc("rtc_poll", { p_me: who, p_after: call.after });
+    for (const m of list) { call.after = m.id; try { await rtcHandle(m.data); } catch (e) { console.error(e); } }
+  } catch {} finally { call.busy = false; }
+}
+function stopCall() {
+  if (!call.on) return;
+  call.on = false;
+  clearInterval(call.timer);
+  rtcSend({ t: "bye", from: call.sid }, true);
+  resetPc();
+  (call.stops || []).forEach((f) => f()); call.stops = [];
+  call.stream && call.stream.getTracks().forEach((t) => t.stop());
+  call.stream = null;
+  try { call.actx && call.actx.close(); } catch {}
+  const vm = $("#v-me"); if (vm) vm.srcObject = null;
+  if ($("#tiles")) { $("#tiles").hidden = true; $("#call-leave").hidden = true; $("#call-join").hidden = false; callSt(""); }
+}
+addEventListener("pagehide", stopCall);
 
 route();

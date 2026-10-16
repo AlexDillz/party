@@ -84,3 +84,20 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
 .lightbox{position:fixed;inset:0;z-index:50;background:#000d;display:flex;align-items:center;justify-content:center;padding:12px;cursor:zoom-out}
 .lightbox img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
 .lightbox button{position:absolute;top:12px;right:14px;border:0;background:#0008;color:#fff;font-size:22px;width:40px;height:40px;border-radius:50%;cursor:pointer}
+
+.call{margin:14px 0}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.tile{background:var(--card);border-radius:14px;padding:8px;box-shadow:0 2px 12px var(--shadow);min-width:0}
+.vbox{position:relative;aspect-ratio:4/3;background:#000;border-radius:10px;overflow:hidden}
+.vbox video{width:100%;height:100%;object-fit:cover;display:block}
+.vbox video.me{transform:scaleX(-1)}
+.tname{position:absolute;left:8px;bottom:6px;font-size:12px;color:#fff;background:#0007;padding:2px 8px;border-radius:999px}
+.lvl{height:8px;background:var(--accent-2);border-radius:999px;overflow:hidden;margin-top:8px}
+.lvl i{display:block;height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .08s linear}
+.ctl{display:flex;gap:6px;margin-top:8px;min-height:38px;align-items:center}
+.ctl .btn{padding:8px 14px}
+.ctl .btn.off{background:#d33;color:#fff}
+.ctl .btn:disabled{opacity:.4}
+.ostate{font-size:13px;color:var(--muted)}
+.call .row{display:flex;gap:8px}
+@media (max-width:600px){.call .row{flex-direction:column}}
