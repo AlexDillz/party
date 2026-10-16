@@ -522,7 +522,7 @@ async function startCall() {
   if (call.on) return;
   const AC = window.AudioContext || window.webkitAudioContext;
   try { call.actx = AC ? new AC() : null; call.actx && call.actx.resume(); } catch { call.actx = null; }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return callSt("Этот браузер не умеет камеру и микрофон 😿");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return callSt("Этот браузер не умеет камеру и микрофон");
   callSt("Жду разрешения от браузера…");
   const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
   let stream = null;
@@ -550,7 +550,7 @@ function setTracks(kind, on) {
   (kind === "audio" ? call.stream.getAudioTracks() : call.stream.getVideoTracks()).forEach((t) => (t.enabled = on));
   const b = $(kind === "audio" ? "#b-mic" : "#b-cam");
   b.classList.toggle("off", !on);
-  b.textContent = kind === "audio" ? (on ? "🎤" : "🔇") : (on ? "📷" : "🚫");
+  b.textContent = (kind === "audio" ? "Микрофон" : "Камера") + (on ? "" : " выкл.");
   sendState();
 }
 const trackOn = (kind) => { const t = call.stream && (kind === "audio" ? call.stream.getAudioTracks() : call.stream.getVideoTracks())[0]; return !!(t && t.enabled); };
@@ -582,7 +582,7 @@ function ensurePc() {
   pc.onconnectionstatechange = () => {
     if (call.pc !== pc) return;
     const s = pc.connectionState;
-    if (s === "connected") { callSt(`На связи с ${otherName()} 💞`); sendState(); }
+    if (s === "connected") { callSt(`На связи с ${otherName()}`); sendState(); }
     else if (s === "connecting") callSt("Соединяюсь…");
     else if (s === "failed") restartCall();
   };
@@ -637,7 +637,7 @@ async function rtcHandle(d) {
     else call.queue.push(d.c);
   } else if (d.t === "state") {
     const b = $("#o-state");
-    if (b && d.from === call.remote) b.textContent = (d.cam ? "" : "🚫 камера ") + (d.mic ? "" : "🔇 микрофон");
+    if (b && d.from === call.remote) b.textContent = [d.cam ? "" : "камера выключена", d.mic ? "" : "микрофон выключен"].filter(Boolean).join(", ");
   }
 }
 async function rtcPoll() {
